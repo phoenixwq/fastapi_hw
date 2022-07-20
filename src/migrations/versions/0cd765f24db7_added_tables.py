@@ -1,8 +1,8 @@
 """Added tables
 
-Revision ID: 7bcca9c5883a
+Revision ID: 0cd765f24db7
 Revises: 
-Create Date: 2022-07-20 17:47:31.240646
+Create Date: 2022-07-20 19:04:06.365152
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision = '7bcca9c5883a'
+revision = '0cd765f24db7'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -37,7 +37,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=True),
     sa.Column('username', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('email', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('uuid', sqlmodel.sql.sqltypes.GUID(), nullable=False),
+    sa.Column('uuid', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=True),
     sa.Column('is_superuser', sa.Boolean(), nullable=True),
