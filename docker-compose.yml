@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  ylab_app:
+    container_name: ylab_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - example.env
+    networks:
+      - ylab_network
+    ports:
+      - "8000:8000"
+    depends_on:
+      ylab_redis:
+        condition: service_healthy
+      ylab_postgres_db:
+        condition: service_healthy
+
+  ylab_redis:
+    container_name: ylab_redis
+    image: redis:6.2.6-alpine
+    expose:
+      - 6379
+    ports:
+      - "9000:6379"
+    networks:
+      - ylab_network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 20s
+      retries: 100
+
+  ylab_postgres_db:
+    container_name: ylab_postgres_db
+    image: postgres:latest
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=ylab_hw
+      - POSTGRES_USER=ylab_hw
+      - POSTGRES_PASSWORD=ylab_hw
+    expose:
+      - 5432
+    ports:
+      - "5432:5432"
+    networks:
+      - ylab_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ylab_hw" ]
+      interval: 5s
+      timeout: 20s
+      retries: 100
+
+networks:
+  ylab_network:
+
+volumes:
+  postgres_data:
