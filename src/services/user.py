@@ -5,18 +5,36 @@ from typing import Union
 import jwt
 from fastapi import Depends
 from sqlmodel import Session
-
+from fastapi import HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import status
 from src.api.v1.schemas.auth import Token
 from src.api.v1.schemas.users import UserCreate, UserLogin
 from src.core.config import JWT_SECRET_KEY, JWT_ALGORITHM, JWT_ACCESS_EXPIRE_SECONDS, JWT_REFRESH_EXPIRE_SECONDS
 from src.db import AbstractCache, get_cache, get_session
 from src.models import User
 from src.services import ServiceMixin
+from src.db import (AbstractCache,
+                    CacheToken,
+                    get_cache,
+                    get_session,
+                    get_access_cash,
+                    get_refresh_cash)
 
 __all__ = ("UserService", "get_user_service")
 
+from src.services.auth import JWTAuth
+
 
 class UserService(ServiceMixin):
+    def __init__(self,
+                 cache: AbstractCache,
+                 access_cash: AbstractCache,
+                 refresh_cash: CacheToken,
+                 session: Session):
+        super().__init__(cache=cache, session=session)
+        self.auth = JWTAuth(access_cash, refresh_cash)
+
     def create_user(self, user: UserCreate) -> dict:
         """Создать пользователя."""
         if self.get_user_by_username(user.username) is not None:
@@ -31,7 +49,7 @@ class UserService(ServiceMixin):
         self.session.commit()
         self.session.refresh(new_user)
         user_data = new_user.dict()
-        user_data["roles"] = []
+        # user_data["roles"] = []
         return {"msg": "User created.", "user": user_data}
 
     def get_user_by_username(self, username: str) -> Union[User, None]:
@@ -53,62 +71,59 @@ class UserService(ServiceMixin):
         user = self.get_user_by_username(login_data.username)
         if not user:
             # TODO errors
-            raise ValueError("")
+            raise ValueError(str(login_data))
         if not user.verify_password(login_data.password):
-            raise ValueError
-        return self.create_jwt_token(user)
+            raise ValueError(str(login_data))
+        jwt_token = self.auth.create_jwt_token(user.uuid)
+        self.auth.add_refresh_token(jwt_token.refresh_token)
+        return jwt_token
 
-    def create_jwt_token(self, user) -> Token:
-        sub: str = user.uuid
-        access_token = self.create_access_token(sub)
-        refresh_token = self.create_refresh_token(sub)
-        return Token(
-            access_token=access_token,
-            refresh_token=refresh_token,
-        )
+    def current_user(self, token: str):
+        payload = self.auth.decode_token(token)
+        if payload is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        jti = payload.get("jti")
+        if self.auth.token_is_blocked(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token was blocked"
+            )
+        sub: str = payload.get("sub")
+        return self.get_user_by_uuid(sub)
 
-    def refresh_token(self, refresh_token: str) -> Token:
-        decode_token = jwt.decode(
-            refresh_token,
-            JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM]
-        )
-        uuid = decode_token.get('sub')
-        user = self.get_user_by_uuid(uuid)
-        return self.create_jwt_token(user=user)
+    def update_user(self, user: User, data: dict) -> (User, str):
+        for key, value in data.items():
+            setattr(user, key, value)
+        self.session.add(user)
+        self.session.commit()
+        self.session.refresh(user)
+        access_token = self.auth.create_access_token(user.uuid)
+        return user, access_token
 
-    def _create_token(self, sub: str, token_type: str, exp: int, claims: dict = None):
-        now = datetime.now(tz=timezone.utc) + timedelta(minutes=exp)
-        token_data = {
-            "iat": now,
-            "nbf": now,
-            "exp": datetime.utcnow() + timedelta(minutes=exp),
-            "type": token_type,
-            "jti": str(uuid.uuid4()),
-            "sub": sub,
-        }
+    def refresh_token(self, token: str) -> Token:
+        return self.auth.refresh_token(token)
 
-        if claims is not None:
-            token_data.update(claims)
+    def logout(self, token: str):
+        payload = self.auth.decode_token(token)
+        jti, sub = payload["jti"], payload["sub"]
+        self.auth.block_access_token(jti)
+        self.auth.remove_refresh_token(sub, jti)
 
-        token = jwt.encode(
-            token_data,
-            JWT_SECRET_KEY,
-            algorithm=JWT_ALGORITHM
-        )
-        return token
-
-    def create_access_token(self, sub, claims=None):
-        return self._create_token(sub, "access", JWT_ACCESS_EXPIRE_SECONDS, claims)
-
-    def create_refresh_token(self, sub, claims=None):
-        return self._create_token(sub, "refresh", JWT_REFRESH_EXPIRE_SECONDS, claims)
+    def logout_all(self, token: str):
+        payload = self.auth.decode_token(token)
+        jti, sub = payload["jti"], payload["sub"]
+        self.auth.block_access_token(jti)
+        self.auth.remove_all_refresh_tokens(sub)
 
 
 # get_post_service — это провайдер PostService. Синглтон
 @lru_cache()
 def get_user_service(
         cache: AbstractCache = Depends(get_cache),
+        access_cash: AbstractCache = Depends(get_access_cash),
+        refresh_cash: CacheToken = Depends(get_refresh_cash),
         session: Session = Depends(get_session),
 ) -> UserService:
-    return UserService(cache=cache, session=session)
+    return UserService(cache=cache,
+                       access_cash=access_cash,
+                       refresh_cash=refresh_cash,
+                       session=session)

@@ -4,6 +4,8 @@ from typing import Optional, Union
 __all__ = (
     "AbstractCache",
     "get_cache",
+    "get_access_cash",
+    "get_refresh_cash",
 )
 
 from src.core import config
@@ -19,10 +21,10 @@ class AbstractCache(ABC):
 
     @abstractmethod
     def set(
-        self,
-        key: str,
-        value: Union[bytes, str],
-        expire: int = config.CACHE_EXPIRE_IN_SECONDS,
+            self,
+            key: str,
+            value: Union[bytes, str],
+            expire: int = config.CACHE_EXPIRE_IN_SECONDS,
     ):
         pass
 
@@ -32,6 +34,16 @@ class AbstractCache(ABC):
 
 
 cache: Optional[AbstractCache] = None
+blocked_access_tokens: Optional[AbstractCache] = None
+active_refresh_tokens: Optional[AbstractCache] = None
+
+
+def get_access_cash() -> AbstractCache:
+    return blocked_access_tokens
+
+
+def get_refresh_cash() -> AbstractCache:
+    return active_refresh_tokens
 
 
 # Функция понадобится при внедрении зависимостей

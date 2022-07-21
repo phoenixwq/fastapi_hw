@@ -2,7 +2,7 @@ import redis
 import uvicorn
 from fastapi import FastAPI
 
-from src.api.v1.resources import posts, users, auth
+from src.api.v1.resources import posts, users
 from src.core import config
 from src.db import cache, redis_cache
 
@@ -31,17 +31,47 @@ def startup():
             host=config.REDIS_HOST, port=config.REDIS_PORT, max_connections=10
         )
     )
+    cache.cache = redis_cache.CacheRedis(
+        cache_instance=redis.Redis(
+            host=config.REDIS_HOST,
+            port=config.REDIS_PORT,
+            max_connections=10,
+            decode_responses=True,
+            db=0
+        )
+    )
+    cache.blocked_access_tokens = redis_cache.CacheRedis(
+        cache_instance=redis.Redis(
+            host=config.REDIS_HOST,
+            port=config.REDIS_PORT,
+            max_connections=10,
+            decode_responses=True,
+            db=1
+        )
+    )
+    cache.active_refresh_tokens = redis_cache.CacheToken(
+        cache_instance=redis.Redis(
+            host=config.REDIS_HOST,
+            port=config.REDIS_PORT,
+            max_connections=10,
+            decode_responses=True,
+            db=2
+        )
+    )
 
 
 @app.on_event("shutdown")
 def shutdown():
     """Отключаемся от баз при выключении сервера"""
+
     cache.cache.close()
+    cache.active_refresh_tokens.close()
+    cache.blocked_access_tokens.close()
 
 
 # Подключаем роутеры к серверу
 app.include_router(router=posts.router, prefix="/api/v1/posts")
-app.include_router(router=auth.router, prefix="/api/v1")
+app.include_router(router=users.router, prefix="/api/v1")
 
 if __name__ == "__main__":
     # Приложение может запускаться командой
