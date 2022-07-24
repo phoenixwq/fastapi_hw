@@ -1,13 +1,13 @@
 from http import HTTPStatus
 from typing import Optional
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from src.api.v1.schemas import PostCreate, PostListResponse, PostModel
 from src.services import PostService, get_post_service
 from fastapi import APIRouter, Depends
-from fastapi.security import OAuth2PasswordBearer
+from src.auth import get_token
+from src.services.user import UserService, get_user_service
 
 router = APIRouter()
-reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 
 
 @router.get(
@@ -49,8 +49,11 @@ def post_detail(
     tags=["posts"],
 )
 def post_create(
-        post: PostCreate, post_service: PostService = Depends(get_post_service), token: str = Depends(reusable_oauth2),
+        post: PostCreate, post_service: PostService = Depends(get_post_service),
+        token: str = Depends(get_token), user_service: UserService = Depends(get_user_service),
 ) -> PostModel:
-    post_service.check_token(token)
+    user = user_service.current_user(token)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     post: dict = post_service.create_post(post=post)
     return PostModel(**post)

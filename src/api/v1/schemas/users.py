@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Union, Optional
+from typing import Optional
 
 from pydantic import BaseModel, EmailStr, UUID4
 
@@ -26,8 +26,9 @@ class UserCreate(UserBase):
 
 
 class UserAbout(UserBase):
+    username: str
     email: EmailStr
-    password: str
     uuid: UUID4
     created_at: datetime
     is_superuser: bool
+    is_active: bool

@@ -28,20 +28,6 @@ def startup():
     """Подключаемся к базам при старте сервера"""
     cache.cache = redis_cache.CacheRedis(
         cache_instance=redis.Redis(
-            host=config.REDIS_HOST, port=config.REDIS_PORT, max_connections=10
-        )
-    )
-    cache.cache = redis_cache.CacheRedis(
-        cache_instance=redis.Redis(
-            host=config.REDIS_HOST,
-            port=config.REDIS_PORT,
-            max_connections=10,
-            decode_responses=True,
-            db=0
-        )
-    )
-    cache.blocked_access_tokens = redis_cache.CacheRedis(
-        cache_instance=redis.Redis(
             host=config.REDIS_HOST,
             port=config.REDIS_PORT,
             max_connections=10,
@@ -49,15 +35,21 @@ def startup():
             db=1
         )
     )
-    cache.active_refresh_tokens = redis_cache.CacheToken(
-        cache_instance=redis.Redis(
+    cache.blocked_access_tokens = redis.Redis(
             host=config.REDIS_HOST,
             port=config.REDIS_PORT,
             max_connections=10,
             decode_responses=True,
             db=2
         )
-    )
+
+    cache.active_refresh_tokens = redis.Redis(
+            host=config.REDIS_HOST,
+            port=config.REDIS_PORT,
+            max_connections=10,
+            decode_responses=True,
+            db=3
+        )
 
 
 @app.on_event("shutdown")

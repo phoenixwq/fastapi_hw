@@ -1,13 +1,17 @@
 from fastapi import status
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
-from src.api.v1.schemas.auth import Token
+from src.auth import get_token
+from src.auth.schema import Token
 from src.services.user import UserService, get_user_service
-from src.api.v1.schemas.users import UserLogin, UserBase, UserUpdate, UserAbout, UserCreate
-from fastapi.security import OAuth2PasswordBearer
+from src.api.v1.schemas.users import (
+    UserLogin,
+    UserUpdate,
+    UserAbout,
+    UserCreate
+)
 
 router = APIRouter()
-reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 
 
 @router.post(
@@ -16,15 +20,18 @@ reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
     tags=["users"],
     status_code=status.HTTP_201_CREATED,
 )
-def user_signup(
+def user_create(
         user: UserCreate,
         user_service: UserService = Depends(get_user_service),
 ) -> dict:
     try:
-        res = user_service.create_user(user=user)
+        new_user = user_service.create_user(user=user)
     except ValueError as error:
-        return {"msg": str(error)}
-    return res
+        raise {"error": str(error)}
+    return {
+        "msg": "User created.",
+        "user": UserAbout(**new_user.dict())
+    }
 
 
 @router.post(
@@ -33,12 +40,11 @@ def user_signup(
     summary="Авторизация пользователя",
     tags=["auth"],
 )
-def login(
+def user_login(
         login_data: UserLogin,
         user_service: UserService = Depends(get_user_service)
 ) -> Token:
-    token = user_service.login_user(login_data=login_data)
-    return token
+    return user_service.login_user(login_data=login_data)
 
 
 @router.post(
@@ -48,11 +54,15 @@ def login(
     tags=["auth"],
 )
 def refresh(
-        token: str = Depends(reusable_oauth2),
+        token: str = Depends(get_token),
         user_service: UserService = Depends(get_user_service)
 ):
-    tokens = user_service.refresh_token(token)
-    return tokens
+    user = user_service.current_user(token)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    refresh_token = user_service.create_refresh_token(user.uuid)
+    access_token = user_service.create_access_token(user.uuid)
+    return Token(access_token=access_token, refresh_token=refresh_token)
 
 
 @router.post(
@@ -62,9 +72,8 @@ def refresh(
 )
 def logout_all(
         user_service: UserService = Depends(get_user_service),
-        token: str = Depends(reusable_oauth2),
+        token: str = Depends(get_token),
 ) -> dict:
-    """Signs out from all devices"""
     user_service.logout_all(token)
     return {"msg": "You have been logged out from all devices."}
 
@@ -76,7 +85,7 @@ def logout_all(
 )
 def logout(
         user_service: UserService = Depends(get_user_service),
-        token: str = Depends(reusable_oauth2),
+        token: str = Depends(get_token),
 ) -> dict:
     """Logging out of this device"""
     user_service.logout(token)
@@ -90,10 +99,10 @@ def logout(
 )
 def get_user(
         user_service: UserService = Depends(get_user_service),
-        token: str = Depends(reusable_oauth2),
-) -> UserBase:
+        token: str = Depends(get_token),
+) -> UserAbout:
     user = user_service.current_user(token)
-    return UserBase(**user.dict())
+    return UserAbout(**user.dict())
 
 
 @router.patch(
@@ -104,10 +113,11 @@ def get_user(
 def update_user(
         update_data: UserUpdate,
         user_service: UserService = Depends(get_user_service),
-        token: str = Depends(reusable_oauth2),
+        token: str = Depends(get_token),
 ) -> dict:
     user = user_service.current_user(token)
-    user, access_token = user_service.update_user(user, update_data.dict(exclude_unset=True))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    user = user_service.update_user(user, update_data.dict(exclude_unset=True))
+    access_token = user_service.create_access_token(user.uuid)
     return {"msg": "Update", "user": UserAbout(**user.dict()), "access_token": access_token}
-
-
